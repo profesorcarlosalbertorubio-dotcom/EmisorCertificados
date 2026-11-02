@@ -15,4 +15,4 @@ COPY . .
 
 EXPOSE 10000
 
-CMD ["python", "main4.py.py"]
+CMD ["python", "main4.py"]
