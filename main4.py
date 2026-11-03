@@ -1,7 +1,7 @@
 import os
 import subprocess
 from datetime import datetime
-from flask import Flask, render_template, request, send_file
+from flask import Flask, render_template, request, jsonify
 from docxtpl import DocxTemplate
 import smtplib
 from email.mime.multipart import MIMEMultipart
@@ -29,8 +29,8 @@ def convertir_docx_a_pdf(input_path, output_dir):
 def obtener_fecha_dinamica(idioma="ESP"):
     """
     Genera la fecha dinámica del sistema con el formato requerido.
-    Para Español (ESP): Nov/01/2026
-    Para Inglés (ENG): Nov/01/2026 (meses abreviados en inglés)
+    Para Español (ESP): Nov/02/2026
+    Para Inglés (ENG): Nov/02/2026 (meses abreviados en inglés)
     """
     ahora = datetime.now()
     dia = str(ahora.day).zfill(2)
@@ -57,7 +57,6 @@ def enviar_correo_certificados(nombre_alumno, correo_destino, pdf_es, pdf_en):
     msg['To'] = correo_destino
     msg['Subject'] = f"Sus Certificados Bilingües - @MundoLaboralTech"
 
-    # Cuerpo del mensaje
     cuerpo = f"""Estimado/a {nombre_alumno},
 
 Le saludamos desde @MundoLaboralTech. Adjunto a este mensaje encontrará sus certificados oficiales en Español y en Inglés correspondientes a su proceso de formación.
@@ -97,20 +96,21 @@ Profesor Carlos Alberto Rubio Sánchez
         servidor.sendmail(CORREO_EMISOR, correo_destino, msg.as_string())
         servidor.quit()
         print(f"[ÉXITO] ¡Correo enviado satisfactoriamente a {correo_destino}!")
+        return True
     except Exception as e:
         print(f"[ERROR DE ENVÍO] No se pudo enviar el correo: {e}")
+        return False
 
 def generar_certificados_bilingues(nombre_alumno, correo_destino):
     """
-    Genera en simultáneo el certificado en Español y el certificado en Inglés
-    utilizando BorraCert-ESP.docx y BorraCert-ENG.docx con fecha dinámica.
+    Genera en simultáneo el certificado en Español y el certificado en Inglés.
     """
     os.makedirs("salida", exist_ok=True)
     nombre_limpio = nombre_alumno.replace(" ", "_")
     
     print(f"\n--- INICIANDO EMISIÓN BILINGÜE PARA: {nombre_alumno} ---")
 
-    # 1. GENERAR CERTIFICADO EN ESPAÑOL
+    # 1. CERTIFICADO ESPAÑOL
     path_es = "Insumos/BorraCert-ESP.docx"
     temp_es = f"salida/temp_{nombre_limpio}_ESP.docx"
     pdf_es = f"salida/Certificado_{nombre_limpio}_ESP.pdf"
@@ -120,8 +120,6 @@ def generar_certificados_bilingues(nombre_alumno, correo_destino):
         fecha_es = obtener_fecha_dinamica("ESP")
         doc_es.render({'nombre': nombre_alumno, 'fecha': fecha_es})
         doc_es.save(temp_es)
-        
-        # Conversión con LibreOffice
         convertir_docx_a_pdf(temp_es, "salida")
         print(f"[ÉXITO] Certificado Español generado: {pdf_es}")
     except Exception as e:
@@ -130,7 +128,7 @@ def generar_certificados_bilingues(nombre_alumno, correo_destino):
         if os.path.exists(temp_es):
             os.remove(temp_es)
 
-    # 2. GENERAR CERTIFICADO EN INGLÉS
+    # 2. CERTIFICADO INGLÉS
     path_en = "Insumos/BorraCert-ENG.docx"
     temp_en = f"salida/temp_{nombre_limpio}_ENG.docx"
     pdf_en = f"salida/Certificado_{nombre_limpio}_ENG.pdf"
@@ -140,8 +138,6 @@ def generar_certificados_bilingues(nombre_alumno, correo_destino):
         fecha_en = obtener_fecha_dinamica("ENG")
         doc_en.render({'nombre': nombre_alumno, 'fecha': fecha_en})
         doc_en.save(temp_en)
-        
-        # Conversión con LibreOffice
         convertir_docx_a_pdf(temp_en, "salida")
         print(f"[ÉXITO] Certificado Inglés generado: {pdf_en}")
     except Exception as e:
@@ -150,17 +146,37 @@ def generar_certificados_bilingues(nombre_alumno, correo_destino):
         if os.path.exists(temp_en):
             os.remove(temp_en)
 
-    # 3. ENVIAR POR CORREO ELECTRÓNICO
+    # 3. ENVÍO POR CORREO
+    exito = False
     if os.path.exists(pdf_es) and os.path.exists(pdf_en):
-        enviar_correo_certificados(nombre_alumno, correo_destino, pdf_es, pdf_en)
+        exito = enviar_correo_certificados(nombre_alumno, correo_destino, pdf_es, pdf_en)
     else:
         print("[ERROR] Faltan archivos PDF para realizar el envío por correo.")
 
     print("--- PROCESO BILINGÜE FINALIZADO ---\n")
+    return exito
 
 @app.route("/")
 def index():
     return "Emisor de Certificados Bilingües @MundoLaboralTech funcionando correctamente."
+
+@app.route("/procesar", methods=["POST"])
+def procesar():
+    """
+    Ruta receptora invocada automáticamente desde Google Sheets.
+    """
+    datos = request.get_json(silent=True) or {}
+    nombre = datos.get("nombre")
+    correo = datos.get("correo")
+
+    if not nombre or not correo:
+        return jsonify({"status": "error", "mensaje": "Datos incompletos"}), 400
+
+    exito = generar_certificados_bilingues(nombre, correo)
+    if exito:
+        return jsonify({"status": "ok", "mensaje": f"Certificados enviados a {correo}"}), 200
+    else:
+        return jsonify({"status": "error", "mensaje": "Fallo la generación o el envío"}), 500
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
