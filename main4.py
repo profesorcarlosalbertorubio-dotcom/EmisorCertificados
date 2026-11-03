@@ -1,5 +1,7 @@
 import os
+import subprocess
 from datetime import datetime
+from flask import Flask, render_template, request, send_file
 from docxtpl import DocxTemplate
 import smtplib
 from email.mime.multipart import MIMEMultipart
@@ -7,11 +9,22 @@ from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
 from email import encoders
 
+app = Flask(__name__)
+
 # ================= CONFIGURACIÓN DE CORREO (MundoLaboralTech) =================
 SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 465
 CORREO_EMISOR = "profesor.carlosalbertorubio@gmail.com"
 CONTRASENA_EMISOR = "pqjn xkcp ovvv uyjn"  # Sus 16 caracteres sin espacios
+
+def convertir_docx_a_pdf(input_path, output_dir):
+    """
+    Convierte un archivo .docx a PDF utilizando LibreOffice en entorno Linux (Render).
+    """
+    subprocess.run([
+        "libreoffice", "--headless", "--convert-to", "pdf", 
+        input_path, "--outdir", output_dir
+    ], check=True)
 
 def obtener_fecha_dinamica(idioma="ESP"):
     """
@@ -107,7 +120,9 @@ def generar_certificados_bilingues(nombre_alumno, correo_destino):
         fecha_es = obtener_fecha_dinamica("ESP")
         doc_es.render({'nombre': nombre_alumno, 'fecha': fecha_es})
         doc_es.save(temp_es)
-        convert(temp_es, pdf_es)
+        
+        # Conversión con LibreOffice
+        convertir_docx_a_pdf(temp_es, "salida")
         print(f"[ÉXITO] Certificado Español generado: {pdf_es}")
     except Exception as e:
         print(f"[ERROR] No se pudo generar el certificado en Español: {e}")
@@ -125,7 +140,9 @@ def generar_certificados_bilingues(nombre_alumno, correo_destino):
         fecha_en = obtener_fecha_dinamica("ENG")
         doc_en.render({'nombre': nombre_alumno, 'fecha': fecha_en})
         doc_en.save(temp_en)
-        convert(temp_en, pdf_en)
+        
+        # Conversión con LibreOffice
+        convertir_docx_a_pdf(temp_en, "salida")
         print(f"[ÉXITO] Certificado Inglés generado: {pdf_en}")
     except Exception as e:
         print(f"[ERROR] No se pudo generar el certificado en Inglés: {e}")
@@ -133,7 +150,7 @@ def generar_certificados_bilingues(nombre_alumno, correo_destino):
         if os.path.exists(temp_en):
             os.remove(temp_en)
 
-    # 3. ENVIAR POR CORREO ELECTRÓNICO (Integrado con su base)
+    # 3. ENVIAR POR CORREO ELECTRÓNICO
     if os.path.exists(pdf_es) and os.path.exists(pdf_en):
         enviar_correo_certificados(nombre_alumno, correo_destino, pdf_es, pdf_en)
     else:
@@ -141,6 +158,10 @@ def generar_certificados_bilingues(nombre_alumno, correo_destino):
 
     print("--- PROCESO BILINGÜE FINALIZADO ---\n")
 
+@app.route("/")
+def index():
+    return "Emisor de Certificados Bilingües @MundoLaboralTech funcionando correctamente."
+
 if __name__ == "__main__":
-    # Prueba local con su nombre y su correo personal real
-    generar_certificados_bilingues("Carlos Alberto Rubio", "profesor.carlosalbertorubio@gmail.com")
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
